@@ -21,8 +21,9 @@ Arguments:
     -p4       Processor TMS9900 + xas99 syntax (TI-99/4A)
     -p5       Processor 8086 + nasm syntax
     -p6       Processor 65c02 + ca65 syntax
-    -p7       Processor 6502 + gasm80 syntax 
+    -p7       Processor 6502 + gasm80 syntax
     -p8       Processor Z80 + gasm80 syntax
+    -p9       Processor 65C02 + lyxass syntax
 
     -n4       Nesting spacing (can be any number
               of spaces or multiple of tab size)

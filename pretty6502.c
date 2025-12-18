@@ -21,6 +21,7 @@
  ** Revision date: May/04/2020. Adjusted CP1610 for indenting REPEAT directive.
  ** Revision date: Apr/12/2021. Added support for 8086 + nasm.
  ** Revision date: Feb/03/2025. Added support for 6502+Z80 / gasm80.
+ ** Revision date: Dec/18/2025. Added support for 65C02 / lyxass
  */
 
 #include <stdio.h>
@@ -28,7 +29,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#define VERSION "v0.9"
+#define VERSION "v0.10"
 
 int tabs;           /* Size of tabs (0 to use spaces) */
 
@@ -42,6 +43,7 @@ enum {
     P_65C02,
     P_6502_GASM80,
     P_Z80_GASM80,
+    P_LYXASS,
     P_UNSUPPORTED,
 } processor;        /* Processor/assembler being used (0-4) */
 
@@ -159,11 +161,67 @@ struct directive {
 };
 
 /*
+ ** LYXASS directives
+ */
+struct directive directives_lyxass[] = {
+    "=",		DONT_RELOCATE_LABEL,
+    "align",		0,
+    "db",		DONT_RELOCATE_LABEL,
+    "dc.b",		DONT_RELOCATE_LABEL,
+    "dc.a",		DONT_RELOCATE_LABEL,
+    "dw",		DONT_RELOCATE_LABEL,
+    "dc.w",		DONT_RELOCATE_LABEL,
+    "dl",		DONT_RELOCATE_LABEL,
+    "dc.l",		DONT_RELOCATE_LABEL,
+    "ds",		DONT_RELOCATE_LABEL,
+    "ds.b",		DONT_RELOCATE_LABEL,
+    "ds.w",		DONT_RELOCATE_LABEL,
+    "ds.l",		DONT_RELOCATE_LABEL,
+    "dcb.b",		DONT_RELOCATE_LABEL,
+    "dcb.w",		DONT_RELOCATE_LABEL,
+    "dcb.l",		DONT_RELOCATE_LABEL,
+    "lynx",		0,
+    "list",		0,
+    "echo",		0,
+    "inc@",		0,
+    "dec@",		0,
+    "set@",		0,
+    "fail",		0,
+    "else",		LEVEL_MINUS,
+    "end",		0,
+    "endif",		LEVEL_OUT,
+    "macro",		LEVEL_IN,
+    "endm",		 0,
+    "equ",		DONT_RELOCATE_LABEL,
+    "if",		LEVEL_IN,
+    "ifvar",		LEVEL_IN,
+    "ifd",		LEVEL_IN,
+    "ifndt",		LEVEL_IN,
+    "incbin",		0,
+    "ibytes",		0,
+    "trans",		0,
+    "include",		0,
+    "switch",		LEVEL_IN,
+    "case", 		0,
+    "ends",		LEVEL_OUT,
+    "list",		0,
+    "long",		0,
+    "org",		0,
+    "run",		0,
+    "rept",		LEVEL_IN,
+    "endr",		LEVEL_OUT,
+    "porg",		0,
+    "set",		DONT_RELOCATE_LABEL,
+    "global",		0,
+    NULL,		0,
+};
+
+/*
  ** DASM directives
  */
 struct directive directives_dasm[] = {
     "=",		DONT_RELOCATE_LABEL,
-    "align",	0,
+    "align",		0,
     "byte",		0,
     "dc",		0,
     "ds",		0,
@@ -618,7 +676,7 @@ int check_opcode(char *p1, char *p2)
 {
     int c;
     int length;
-    
+
     if (processor == P_6502) {   /* 6502 + DASM */
         for (c = 0; directives_dasm[c].directive != NULL; c++) {
             length = strlen(directives_dasm[c].directive);
@@ -723,6 +781,20 @@ int check_opcode(char *p1, char *p2)
                 return -(c + 1);
         }
     }
+    if (processor == P_LYXASS) {   /* 65C02 + lyxass */
+        for (c = 0; directives_lyxass[c].directive != NULL; c++) {
+            length = strlen(directives_lyxass[c].directive);
+            if ((length == p2 - p1 &&
+                 memcmpcase(p1, directives_lyxass[c].directive, p2 - p1 ) == 0) || (length == p2 - p1 && memcmpcase(p1, directives_lyxass[c].directive, p2 - p1) == 0)) {
+                return c + 1;
+            }
+        }
+        for (c = 0; mnemonics_65C02[c] != NULL; c++) {
+            length = strlen(mnemonics_65C02[c]);
+            if (length == p2 - p1 && memcmpcase(p1, mnemonics_65C02[c], p2 - p1) == 0)
+                return -(c + 1);
+        }
+    }
     return 0;
 }
 
@@ -733,7 +805,7 @@ void request_space(FILE *output, int *current, int new, int force)
 {
     int base;
     int tab;
-    
+
     /*
      ** If already exceeded space...
      */
@@ -749,7 +821,7 @@ void request_space(FILE *output, int *current, int new, int force)
         }
         return;
     }
-    
+
     /*
      ** Advance one step at a time
      */
@@ -845,7 +917,7 @@ int main(int argc, char *argv[])
     int indent;
     int something;
     int comment;
-    
+
     /*
      ** Show usage if less than 3 arguments (program name counts as one)
      */
@@ -875,6 +947,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "    -p6       Processor 65c02 + ca65 syntax\n");
         fprintf(stderr, "    -p7       Processor 6502 + gasm80 syntax\n");
         fprintf(stderr, "    -p8       Processor Z80 + gasm80 syntax\n");
+        fprintf(stderr, "    -p9       Processor 65C02 + lyxass syntax\n");
         fprintf(stderr, "    -n4       Nesting spacing (can be any number\n");
         fprintf(stderr, "              of spaces or multiple of tab size)\n");
         fprintf(stderr, "    -m8       Start of mnemonic column (default)\n");
@@ -899,7 +972,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "[label] mnemonic [operand] ; comment\n");
         exit(1);
     }
-    
+
     /*
      ** Default settings
      */
@@ -914,7 +987,7 @@ int main(int argc, char *argv[])
     labels_own_line = 0;
     mnemonics_case = 0;
     directives_case = 0;
-    
+
     /*
      ** Process arguments
      */
@@ -988,7 +1061,7 @@ int main(int argc, char *argv[])
         }
         c++;
     }
-    
+
     /*
      ** Validate constraints
      */
@@ -1029,7 +1102,7 @@ int main(int argc, char *argv[])
     if (something && processor == P_TMS9900) {
         fprintf(stderr, "Warning: ignoring operand column, not possible because you selected TMS9900 mode\n");
     }
-    
+
     /*
      ** Open input file, measure it and read it into buffer
      */
@@ -1055,7 +1128,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     fclose(input);
-    
+
     /*
      ** Ease processing of input file
      */
@@ -1069,7 +1142,7 @@ int main(int argc, char *argv[])
         }
         if (*p1 == '\n') {
             p1++;
-            
+
             /* Remove trailing spaces */
             while (p2 > data && *(p2 - 1) != '\0' && isspace(*(p2 - 1)))
                 p2--;
@@ -1083,7 +1156,7 @@ int main(int argc, char *argv[])
     if (request == 0)
         *p2++ = '\0';	/* Force line break */
     allocation = p2 - data;
-    
+
     /*
      ** Now generate output file
      */
@@ -1102,7 +1175,7 @@ int main(int argc, char *argv[])
         current_column = 0;
         p1 = p;
         p2 = p1;
-        
+
         while (*p2 && !isspace(*p2) && !comment_present(p, p2, 1)) {
             p2++;
         }
@@ -1145,6 +1218,8 @@ int main(int argc, char *argv[])
                         flags = directives_gasm80[c - 1].flags;
                     else if (processor == P_Z80_GASM80)
                         flags = directives_gasm80[c - 1].flags;
+                    else if (processor == P_LYXASS)
+                        flags = directives_lyxass[c - 1].flags;
                     if (flags & DONT_RELOCATE_LABEL)
                         request = start_operand;
                     else
@@ -1154,7 +1229,8 @@ int main(int argc, char *argv[])
                 request = start_mnemonic;
                 c = 0;
             }
-            if (c <= 0) {   /* Mnemonic or unknown */
+             /* do not touch unknown symbols for lyxass, could be macro */
+            if ( processor != P_LYXASS && c == 0 ){
                 if (mnemonics_case == 1) {
                     p3 = p1;
                     while (p3 < p2) {
@@ -1168,7 +1244,21 @@ int main(int argc, char *argv[])
                         p3++;
                     }
                 }
-            } else {    /* Directive */
+            } else if (c < 0) {   /* Mnemonic or unknown */
+                if (mnemonics_case == 1) {
+                    p3 = p1;
+                    while (p3 < p2) {
+                        *p3 = tolower(*p3);
+                        p3++;
+                    }
+                } else if (mnemonics_case == 2) {
+                    p3 = p1;
+                    while (p3 < p2) {
+                        *p3 = toupper(*p3);
+                        p3++;
+                    }
+                }
+            } else if ( c > 0 ) {    /* Directive */
                 if (directives_case == 1) {
                     p3 = p1;
                     while (p3 < p2) {
@@ -1183,10 +1273,10 @@ int main(int argc, char *argv[])
                     }
                 }
             }
-            
+
             /*
              ** Move label to own line
-             */ 
+             */
             if (current_column != 0 && labels_own_line != 0 && (flags & DONT_RELOCATE_LABEL) == 0) {
                 fputc('\n', output);
                 current_column = 0;
@@ -1259,7 +1349,7 @@ int main(int argc, char *argv[])
                 while (isspace(*p1))
                     p1++;
             }
-            
+
             /*
              ** Try to keep comments aligned vertically (only works
              ** if spaces were used in source file)
@@ -1298,7 +1388,7 @@ int main(int argc, char *argv[])
         fputc('\n', output);
         while (*p++) ;
     }
-    fclose(output);	
+    fclose(output);
     free(data);
     exit(0);
 }
