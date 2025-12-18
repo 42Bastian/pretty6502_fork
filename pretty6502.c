@@ -3,7 +3,9 @@
  **
  ** by Oscar Toledo G.
  **
- ** © Copyright 2017-2025 Oscar Toledo G.
+ ** (c) Copyright 2017-2025 Oscar Toledo G.
+ ** stdin/stdout support (c) LLeny
+ ** Lyxass support (c) 42Bastian
  **
  ** Creation date: Nov/03/2017.
  ** Revision date: Nov/06/2017. Processor selection. Indents nested IF/ENDIF.
@@ -885,49 +887,15 @@ int comment_present(char *start, char *actual, int left_side)
     return 0;
 }
 
-/*
- ** Main program
- */
-int main(int argc, char *argv[])
+void print_help()
 {
-    int c;
-    int style;
-    int start_mnemonic;
-    int start_operand;
-    int start_comment;
-    int align_comment;
-    int nesting_space;
-    int labels_own_line;
-    FILE *input;
-    FILE *output;
-    int allocation;
-    char *data;
-    char *p;
-    char *p1;
-    char *p2;
-    char *p3;
-    int current_column;
-    int request;
-    int current_level;
-    int prev_comment_original_location;
-    int prev_comment_final_location;
-    int flags;
-    int mnemonics_case;
-    int directives_case;
-    int indent;
-    int something;
-    int comment;
-
-    /*
-     ** Show usage if less than 3 arguments (program name counts as one)
-     */
-    if (argc < 3) {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Pretty6502 " VERSION " by Oscar Toledo G. http://nanochess.org/\n");
+        fprintf(stderr, "Pretty6502 " VERSION "\n");
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage:\n");
-        fprintf(stderr, "    pretty6502 [args] input.asm output.asm\n");
+    fprintf(stderr, "    pretty6502 [args] [input.asm] [output.asm]\n");
         fprintf(stderr, "\n");
+    fprintf(stderr, "stdin/stdout will be used if no file is provided.\n");
         fprintf(stderr, "It's recommended to not use same output file as input,\n");
         fprintf(stderr, "even if possible because there is a chance (0.0000001%%)\n");
         fprintf(stderr, "that you can DAMAGE YOUR SOURCE if Pretty6502 has\n");
@@ -974,6 +942,39 @@ int main(int argc, char *argv[])
     }
 
     /*
+ ** Main program
+ */
+int main(int argc, char *argv[])
+{
+    int c;
+    int style;
+    int start_mnemonic;
+    int start_operand;
+    int start_comment;
+    int align_comment;
+    int nesting_space;
+    int labels_own_line;
+    FILE *input;
+    FILE *output;
+    int allocation;
+    char *data;
+    char *p;
+    char *p1;
+    char *p2;
+    char *p3;
+    int current_column;
+    int request;
+    int current_level;
+    int prev_comment_original_location;
+    int prev_comment_final_location;
+    int flags;
+    int mnemonics_case;
+    int directives_case;
+    int indent;
+    int something;
+    int comment;
+
+    /*
      ** Default settings
      */
     style = 0;
@@ -993,12 +994,11 @@ int main(int argc, char *argv[])
      */
     something = 0;
     c = 1;
-    while (c < argc - 2) {
-        if (argv[c][0] != '-') {
-            fprintf(stderr, "Bad argument\n");
-            exit(1);
-        }
+    while (c < argc && argv[c][0] == '-') {
         switch (tolower(argv[c][1])) {
+            case 'h':
+                print_help();
+                break;
             case 's':	/* Style */
                 style = atoi(&argv[c][2]);
                 if (style != 0 && style != 1) {
@@ -1106,6 +1106,7 @@ int main(int argc, char *argv[])
     /*
      ** Open input file, measure it and read it into buffer
      */
+    if(c < argc) {
     input = fopen(argv[c], "rb");
     if (input == NULL) {
         fprintf(stderr, "Unable to open input file: %s\n", argv[c]);
@@ -1126,8 +1127,26 @@ int main(int argc, char *argv[])
         fclose(input);
         free(data);
         exit(1);
+        }
+        fclose(input);
     }
-    fclose(input);
+    else { // Read data from stdin
+        fprintf(stderr, "Processing stdin...\n");
+        int buffer_len = 512;
+        char c;
+        allocation = 0;
+        data = malloc(buffer_len);
+        while(EOF != (c = fgetc(stdin)))
+        {
+            data[allocation] = c;
+            ++allocation;
+            if(allocation >= buffer_len)
+            {
+                buffer_len += 512;
+                data = realloc(data, buffer_len);
+            }
+        }
+    }
 
     /*
      ** Ease processing of input file
@@ -1161,10 +1180,14 @@ int main(int argc, char *argv[])
      ** Now generate output file
      */
     c++;
+    if(c < argc) {
     output = fopen(argv[c], "w");
     if (output == NULL) {
         fprintf(stderr, "Unable to open output file: %s\n", argv[c]);
         exit(1);
+    }
+    } else {
+        output = stdout;
     }
     prev_comment_original_location = 0;
     prev_comment_final_location = 0;
@@ -1380,7 +1403,10 @@ int main(int argc, char *argv[])
             while (p2 > p1 && isspace(*(p2 - 1)))
                 p2--;
             fwrite(p1, sizeof(char), p2 - p1, output);
+            fputc('\n', output);
             current_column += p2 - p1;
+            while (*p++) ;
+            continue;
         } else if (something == 0) {
             prev_comment_original_location = 0;
             prev_comment_final_location = 0;
