@@ -1,4 +1,5 @@
-Pretty6502 v0.10 by Oscar Toledo G. http://nanochess.org/
+Pretty6502 v0.10 by Oscar Toledo G.
+Parts: (c) 42Bastian and LLeny
 
 Usage:
     pretty6502 [args] input.asm output.asm
